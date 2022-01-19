@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: te-agent-deployment
+  labels:
+    app: te-agent-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: te-agent-deployment
+  template:
+    metadata:
+      labels:
+        app: te-agent-deployment
+    spec:
+      hostname: te-agent-deployment
+      containers:
+      - name: te-agent-deployment
+        image: thousandeyes/enterprise-agent:latest
+        command: ["/sbin/my_init"]
+        securityContext:
+          capabilities:
+            add:
+              - NET_ADMIN
+              - SYS_ADMIN
+        env:
+          - name: TEAGENT_ACCOUNT_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: te-credentials
+                key: ACCOUNT_TOKEN
+          - name: TEAGENT_INET
+            value: "4"
+          - name: KUBERNETES
+            value: "true"
+          - name: AGENT_NAME
+            # Deployment requires hard coding fixed agent name,
+            # otherwise, name will change on each redeployment.
+            value: te-agent-deployment
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "100m"
+          limits:
+            memory: "2Gi"
+            cpu: "200m"
+        tty: true
+        volumeMounts:
+          - name: vol-agent
+            mountPath: /var/lib/te-agent
+            subPathExpr: $(AGENT_NAME)/te-agent
+          - name: vol-agent
+            mountPath: /var/lib/te-browserbot
+            subPathExpr: $(AGENT_NAME)/te-browserbot
+          - name: vol-agent
+            mountPath: /var/log/agent
+            subPathExpr: $(AGENT_NAME)/log
+      terminationGracePeriodSeconds: 10
+      restartPolicy: Always
+      nodeSelector:
+        host: host2
+      volumes:
+        - name: vol-agent
+          persistentVolumeClaim:
+            claimName: te-agent-deployment-pvc
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: te-agent-deployment-pv
+spec:
+  storageClassName: standard
+  capacity:
+    storage: 4Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  gcePersistentDisk:
+    # This disk must be created manually
+    pdName: te-pv-disk
+    fsType: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: te-agent-deployment-pvc
+spec:
+  storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  volumeName: te-agent-deployment-pv
